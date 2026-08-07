@@ -1,0 +1,67 @@
+# Unified Flous Flow WhatsApp stack: Odoo 19 + Flous Flow WhatsApp module
+# + the WhatsApp connector (Node.js / Baileys) with automatic library updates.
+#
+# Quick start:
+#   cp .env.example .env      # then edit the values
+#   docker compose up -d --build
+#
+# Then open http://localhost:8069, install the `flousflow_whatsapp` module,
+# create a number with a session key, and the connector will pair it via QR.
+version: "3.8"
+
+services:
+  # ------------------------------------------------------------------ odoo --
+  web:
+    image: odoo:19.0
+    depends_on:
+      - db
+    ports:
+      - "8069:8069"
+    environment:
+      - HOST=db
+      - USER=odoo
+      - PASSWORD=odoo
+      # The shared secret the connector uses to sign its requests. MUST match
+      # the value the connector process uses (FLOUSFLOW_WHATSAPP_CONNECTOR_SECRET).
+      - FLOUSFLOW_WHATSAPP_CONNECTOR_SECRET=${FLOUSFLOW_WHATSAPP_CONNECTOR_SECRET:?set in .env}
+    volumes:
+      - odoo-web-data:/var/lib/odoo
+      # Mount the Odoo module from this repository (./odoo_addons/flousflow_whatsapp).
+      # Clone FlousFlow/flousflow_whatsapp into ./odoo_addons/flousflow_whatsapp
+      # (or point this at your own checkout) before starting.
+      - ./odoo_addons:/mnt/extra-addons
+      - ./odoo.conf:/etc/odoo/odoo.conf:ro
+
+  db:
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=odoo
+      - POSTGRES_PASSWORD=odoo
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+
+  # ------------------------------------------------------------ connector ----
+  connector:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      - ODOO_BASE_URL=http://web:8069
+      - FLOUSFLOW_WHATSAPP_CONNECTOR_SECRET=${FLOUSFLOW_WHATSAPP_CONNECTOR_SECRET:?set in .env}
+      # Comma-separated connector session keys. Each key must match the
+      # `connector_session_key` of a number created in Odoo.
+      - WHATSAPP_SESSIONS=${WHATSAPP_SESSIONS:?set in .env}
+      - AUTO_UPDATE_ENABLED=${AUTO_UPDATE_ENABLED:-true}
+      - AUTO_UPDATE_INTERVAL_MS=${AUTO_UPDATE_INTERVAL_MS:-21600000}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - connector-data:/app/data
+
+volumes:
+  odoo-web-data:
+  odoo-db-data:
+  connector-data:
