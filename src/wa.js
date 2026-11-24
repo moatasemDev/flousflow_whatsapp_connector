@@ -26,6 +26,12 @@ class WhatsAppSession {
     this.retryTimer = null;
     // Track last inbound per chat (for the 24h customer-service window).
     this.lastInboundAt = new Map(); // remoteJid -> Date
+    // Map phone digits -> real remoteJid (…@lid or …@s.whatsapp.net).
+    // WhatsApp may identify a contact by LID while Odoo stores only the
+    // digits; without this map, outbound sends and window checks derive
+    // …@s.whatsapp.net from the digits and never match the …@lid inbound,
+    // so every reply to a LID contact fails with outside_window.
+    this.jidByPhone = new Map(); // digits -> remoteJid
   }
 
   get authDir() {

@@ -104,6 +104,17 @@ async function handleInboundUpsert(session, msg) {
 
   // Real inbound customer message.
   session.lastInboundAt.set(remoteJid, new Date());
+  // Remember the real JID for this contact's digits, and record the window
+  // under the normalized phone JID too, so outbound replies (which only
+  // know the Odoo phone) resolve to the same identity the inbound came from.
+  const inboundDigits = String(phone || "").replace(/\D/g, "");
+  if (inboundDigits) {
+    if (session.jidByPhone) session.jidByPhone.set(inboundDigits, remoteJid);
+    const normalizedJid = toJid(phone);
+    if (normalizedJid && normalizedJid !== remoteJid) {
+      session.lastInboundAt.set(normalizedJid, new Date());
+    }
+  }
   await odoo.sendEvent({ ...base, direction: "inbound", ...media });
 }
 
@@ -184,7 +195,14 @@ async function sendOutbound(session, claimed) {
     return;
   }
 
-  const jid = toJid(claimed.customer_phone);
+  // Resolve the real JID for this contact. Odoo stores only the phone
+  // digits, but WhatsApp may identify the contact by LID (…@lid); deriving
+  // …@s.whatsapp.net from the digits fails the window check and sends to
+  // the wrong JID for LID contacts. Prefer the JID seen on a real inbound.
+  const outboundDigits = String(claimed.customer_phone || "").replace(/\D/g, "");
+  const jid =
+    (session.jidByPhone && session.jidByPhone.get(outboundDigits)) ||
+    toJid(claimed.customer_phone);
   if (!jid) {
     await odoo.ackOutbound(claimed.id, session.sessionKey, "failed", {
       error_code: "invalid_phone",
